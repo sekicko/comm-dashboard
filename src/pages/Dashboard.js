@@ -2,6 +2,27 @@ import { useEffect, useState } from 'react';
 import dayjs from 'dayjs';
 import { getCommission } from '../services/deriv';
 
+const formatDate = (date) => date.format('YYYY-MM-DD');
+
+const getBreakdownData = (response, appId) => {
+  const breakdown = response?.data?.breakdown || [];
+
+  if (!appId) {
+    return breakdown.reduce((acc, app) => ({
+      commission: acc.commission + (app.app_markup_usd || 0),
+      transactions: acc.transactions + (app.contract_count || 0),
+      clients: acc.clients + (app.client_count || 0)
+    }), { commission: 0, transactions: 0, clients: 0 });
+  }
+
+  const appData = breakdown.find((app) => app.app_id === appId);
+  return {
+    commission: appData?.app_markup_usd || 0,
+    transactions: appData?.contract_count || 0,
+    clients: appData?.client_count || 0
+  };
+};
+
 import Header from '../components/Header';
 import Sidebar from '../components/Sidebar';
 import CommissionCard from '../components/CommissionCard';
@@ -53,70 +74,38 @@ export default function Dashboard({ onLogout }) {
 
   const loadActiveApps = async () => {
     try {
-      // Get this month's commission breakdown to find active apps
-      const monthFrom = dayjs().startOf('month').format('YYYY-MM-DD HH:mm:ss');
-      const monthTo = dayjs().endOf('month').format('YYYY-MM-DD HH:mm:ss');
-      const monthRes = await getCommission(monthFrom, monthTo);
-      const breakdown = monthRes.app_markup_statistics?.breakdown || [];
-      
-      // Filter apps with commission > 0 and sort by commission
+      const monthRes = await getCommission(formatDate(dayjs().startOf('month')), formatDate(dayjs().endOf('month')));
+      const breakdown = monthRes?.data?.breakdown || [];
+
       const active = breakdown
-        .filter(app => app.app_markup_usd > 0)
-        .map(app => ({
+        .filter((app) => (app.app_markup_usd || 0) > 0)
+        .map((app) => ({
           app_id: app.app_id,
-          commission: app.app_markup_usd
+          commission: app.app_markup_usd || 0
         }))
         .sort((a, b) => b.commission - a.commission);
-      
+
       setActiveApps(active);
     } catch (error) {
       console.error('Error loading active apps:', error);
     }
   };
 
-  const getAppData = (breakdown, appId) => {
-    if (!appId) {
-      // Return total if no app selected
-      return breakdown.reduce((acc, app) => ({
-        commission: acc.commission + (app.app_markup_usd || 0),
-        transactions: acc.transactions + (app.transactions_count || 0)
-      }), { commission: 0, transactions: 0 });
-    }
-    
-    // Return data for specific app
-    const appData = breakdown.find(app => app.app_id === appId);
-    return {
-      commission: appData?.app_markup_usd || 0,
-      transactions: appData?.transactions_count || 0
-    };
-  };
-
   const loadDefaultCards = async () => {
     try {
       // TODAY
-      const todayFrom = dayjs().startOf('day').format('YYYY-MM-DD HH:mm:ss');
-      const todayTo = dayjs().endOf('day').format('YYYY-MM-DD HH:mm:ss');
-      const todayRes = await getCommission(todayFrom, todayTo);
-      const todayBreakdown = todayRes.app_markup_statistics?.breakdown || [];
-      const todayData = getAppData(todayBreakdown, selectedAppId);
+      const todayRes = await getCommission(formatDate(dayjs().startOf('day')), formatDate(dayjs().endOf('day')));
+      const todayData = getBreakdownData(todayRes, selectedAppId);
       setToday(todayData.commission);
       setTodayTxns(todayData.transactions);
 
-      // THIS MONTH
-      const monthFrom = dayjs().startOf('month').format('YYYY-MM-DD HH:mm:ss');
-      const monthTo = dayjs().endOf('month').format('YYYY-MM-DD HH:mm:ss');
-      const monthRes = await getCommission(monthFrom, monthTo);
-      const monthBreakdown = monthRes.app_markup_statistics?.breakdown || [];
-      const monthData = getAppData(monthBreakdown, selectedAppId);
+      const monthRes = await getCommission(formatDate(dayjs().startOf('month')), formatDate(dayjs().endOf('month')));
+      const monthData = getBreakdownData(monthRes, selectedAppId);
       setThisMonth(monthData.commission);
       setThisMonthTxns(monthData.transactions);
 
-      // LAST MONTH
-      const lastFrom = dayjs().subtract(1, 'month').startOf('month').format('YYYY-MM-DD HH:mm:ss');
-      const lastTo = dayjs().subtract(1, 'month').endOf('month').format('YYYY-MM-DD HH:mm:ss');
-      const lastRes = await getCommission(lastFrom, lastTo);
-      const lastBreakdown = lastRes.app_markup_statistics?.breakdown || [];
-      const lastData = getAppData(lastBreakdown, selectedAppId);
+      const lastRes = await getCommission(formatDate(dayjs().subtract(1, 'month').startOf('month')), formatDate(dayjs().subtract(1, 'month').endOf('month')));
+      const lastData = getBreakdownData(lastRes, selectedAppId);
       setLastMonth(lastData.commission);
       setLastMonthTxns(lastData.transactions);
     } catch (error) {
@@ -131,12 +120,11 @@ export default function Dashboard({ onLogout }) {
       const currentYear = dayjs().year();
 
       for (let i = 0; i < 12; i++) {
-        const from = dayjs().year(currentYear).month(i).startOf('month').format('YYYY-MM-DD HH:mm:ss');
-        const to = dayjs().year(currentYear).month(i).endOf('month').format('YYYY-MM-DD HH:mm:ss');
+        const from = formatDate(dayjs().year(currentYear).month(i).startOf('month'));
+        const to = formatDate(dayjs().year(currentYear).month(i).endOf('month'));
 
         const res = await getCommission(from, to);
-        const breakdown = res.app_markup_statistics?.breakdown || [];
-        const monthData = getAppData(breakdown, selectedAppId);
+        const monthData = getBreakdownData(res, selectedAppId);
         
         data.push({
           label: dayjs().month(i).format('MMM'),
@@ -160,12 +148,11 @@ export default function Dashboard({ onLogout }) {
       const daysInMonth = dayjs().daysInMonth();
 
       for (let i = 1; i <= Math.min(daysInMonth, 30); i++) {
-        const from = dayjs().date(i).startOf('day').format('YYYY-MM-DD HH:mm:ss');
-        const to = dayjs().date(i).endOf('day').format('YYYY-MM-DD HH:mm:ss');
+        const from = formatDate(dayjs().date(i).startOf('day'));
+        const to = formatDate(dayjs().date(i).endOf('day'));
 
         const res = await getCommission(from, to);
-        const breakdown = res.app_markup_statistics?.breakdown || [];
-        const dayData = getAppData(breakdown, selectedAppId);
+        const dayData = getBreakdownData(res, selectedAppId);
         
         data.push({
           label: `Day ${i}`,
@@ -189,12 +176,11 @@ export default function Dashboard({ onLogout }) {
       const today = dayjs();
 
       for (let i = 0; i < 24; i++) {
-        const from = today.hour(i).minute(0).second(0).format('YYYY-MM-DD HH:mm:ss');
-        const to = today.hour(i).minute(59).second(59).format('YYYY-MM-DD HH:mm:ss');
+        const from = formatDate(today.hour(i).minute(0).second(0));
+        const to = formatDate(today.hour(i).minute(59).second(59));
 
         const res = await getCommission(from, to);
-        const breakdown = res.app_markup_statistics?.breakdown || [];
-        const hourData = getAppData(breakdown, selectedAppId);
+        const hourData = getBreakdownData(res, selectedAppId);
         
         data.push({
           label: `${i}:00`,
@@ -225,8 +211,9 @@ export default function Dashboard({ onLogout }) {
   const checkCustom = async (from, to) => {
     try {
       const res = await getCommission(from, to);
-      setCustom(res.app_markup_statistics?.total_app_markup_usd || 0);
-      setCustomTxns(res.app_markup_statistics?.total_transactions_count || 0);
+      const customData = getBreakdownData(res, selectedAppId);
+      setCustom(customData.commission);
+      setCustomTxns(customData.transactions);
       // Don't update chart for custom range
     } catch (error) {
       console.error('Error loading custom commission:', error);

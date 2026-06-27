@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import dayjs from 'dayjs';
-import { getAppList, getCommission } from '../services/deriv';
+import { getCommission } from '../services/deriv';
 import AppCard from '../components/AppCard';
+
+const formatDate = (date) => date.format('YYYY-MM-DD');
 
 export default function AllApps() {
   const [apps, setApps] = useState([]);
@@ -24,23 +26,11 @@ export default function AllApps() {
     setLoading(true);
     
     try {
-      // Get app list
-      const appListRes = await getAppList();
-      const appList = appListRes.app_list || [];
+      const thisMonthRes = await getCommission(formatDate(dayjs().startOf('month')), formatDate(dayjs().endOf('month')));
+      const thisMonthBreakdown = thisMonthRes?.data?.breakdown || [];
 
-      // Get commission breakdown for all apps
-      const thisMonthFrom = dayjs().startOf('month').format('YYYY-MM-DD HH:mm:ss');
-      const thisMonthTo = dayjs().endOf('month').format('YYYY-MM-DD HH:mm:ss');
-      const lastMonthFrom = dayjs().subtract(1, 'month').startOf('month').format('YYYY-MM-DD HH:mm:ss');
-      const lastMonthTo = dayjs().subtract(1, 'month').endOf('month').format('YYYY-MM-DD HH:mm:ss');
-
-      // Get this month's breakdown
-      const thisMonthRes = await getCommission(thisMonthFrom, thisMonthTo);
-      const thisMonthBreakdown = thisMonthRes.app_markup_statistics?.breakdown || [];
-      
-      // Get last month's breakdown
-      const lastMonthRes = await getCommission(lastMonthFrom, lastMonthTo);
-      const lastMonthBreakdown = lastMonthRes.app_markup_statistics?.breakdown || [];
+      const lastMonthRes = await getCommission(formatDate(dayjs().subtract(1, 'month').startOf('month')), formatDate(dayjs().subtract(1, 'month').endOf('month')));
+      const lastMonthBreakdown = lastMonthRes?.data?.breakdown || [];
 
       const stats = {};
       let totalRev = 0;
@@ -50,11 +40,11 @@ export default function AllApps() {
       thisMonthBreakdown.forEach(item => {
         const appId = item.app_id;
         const commission = item.app_markup_usd || 0;
-        
+
         stats[appId] = {
           thisMonth: commission,
           lastMonth: 0,
-          transactions: item.transactions_count || 0,
+          transactions: item.contract_count || 0,
           sharePercent: 0
         };
 
@@ -77,7 +67,7 @@ export default function AllApps() {
           stats[appId] = {
             thisMonth: 0,
             lastMonth: commission,
-            transactions: item.transactions_count || 0,
+            transactions: item.contract_count || 0,
             sharePercent: 0
           };
           totalRev += commission;
@@ -85,7 +75,7 @@ export default function AllApps() {
       });
 
       // Filter out apps with no data in either month
-      const appsWithData = appList.filter(app => stats[app.app_id]);
+      const appsWithData = Object.keys(stats).map((appId) => ({ app_id: Number(appId) }));
       
       // Calculate share percentages
       Object.keys(stats).forEach(appId => {
@@ -95,7 +85,7 @@ export default function AllApps() {
       });
 
       // Count active apps (those with commission this month)
-      const activeCount = appsWithData.filter(app => {
+      const activeCount = appsWithData.filter((app) => {
         const appStats = stats[app.app_id];
         return appStats && appStats.thisMonth > 0;
       }).length;

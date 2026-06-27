@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
-import { connectDeriv, disconnectDeriv } from './services/deriv';
+import { disconnectDeriv } from './services/deriv';
+import { clearOAuthSession } from './services/oauth';
 import LoginModal from './components/LoginModal';
 import Dashboard from './pages/Dashboard';
 import OAuthCallback from './pages/OAuthCallback';
@@ -23,11 +24,11 @@ function OAuthRedirectHandler() {
 
 // Check for token in localStorage on initial load
 const getInitialState = () => {
-  const token = localStorage.getItem('deriv_token');
+  const token = localStorage.getItem('deriv_oauth_access_token') || localStorage.getItem('deriv_token');
   const loginId = localStorage.getItem('deriv_loginid');
   return {
     hasToken: !!(token && loginId),
-    loading: true
+    loading: false
   };
 };
 
@@ -39,24 +40,13 @@ export default function App() {
   const [hasToken, setHasToken] = useState(initialState.hasToken);
 
   useEffect(() => {
-    const token = localStorage.getItem('deriv_token');
+    const token = localStorage.getItem('deriv_oauth_access_token') || localStorage.getItem('deriv_token');
     const loginId = localStorage.getItem('deriv_loginid');
-    
-    // Show loading state immediately if token exists
+
     if (token && loginId) {
       setHasToken(true);
-      setLoading(true);
-      
-      connectDeriv(token)
-        .then((response) => {
-          setLoggedIn(true);
-        })
-        .catch((err) => {
-          // Don't remove token automatically - let user try to login again
-        })
-        .finally(() => {
-          setLoading(false);
-        });
+      setLoggedIn(true);
+      setLoading(false);
     } else {
       setLoading(false);
       setHasToken(false);
@@ -65,8 +55,10 @@ export default function App() {
 
   const logout = () => {
     disconnectDeriv();
+    clearOAuthSession();
     localStorage.removeItem('deriv_loginid');
-    localStorage.removeItem('deriv_token');
+    localStorage.removeItem('deriv_oauth_access_token');
+    localStorage.removeItem('deriv_oauth_scope');
     setLoggedIn(false);
     setHasToken(false);
   };

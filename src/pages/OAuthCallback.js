@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
-import { connectDeriv, getAppList } from '../services/deriv';
-import { saveToken } from '../services/appwrite';
+import { exchangeCodeForToken, clearOAuthSession } from '../services/oauth';
 
 export default function OAuthCallback() {
   const [status, setStatus] = useState('Processing...');
@@ -12,58 +11,45 @@ export default function OAuthCallback() {
 
   const handleOAuthCallback = async () => {
     try {
-      // Get URL parameters
       const params = new URLSearchParams(window.location.search);
-      
-      // Handle multiple accounts from OAuth (acct1, acct2, acct3, etc.)
-      const accounts = [];
-      let i = 1;
-      while (params.has(`acct${i}`)) {
-        accounts.push({
-          loginId: params.get(`acct${i}`),
-          token: params.get(`token${i}`),
-          currency: params.get(`cur${i}`)
-        });
-        i++;
+      const error = params.get('error');
+      const code = params.get('code');
+      const state = params.get('state');
+      const storedState = sessionStorage.getItem('deriv_oauth_state');
+
+      if (error) {
+        throw new Error(params.get('error_description') || 'Deriv OAuth failed.');
       }
 
-      if (accounts.length === 0) {
-        throw new Error('No accounts received from Deriv OAuth');
+      if (!code) {
+        throw new Error('No authorization code returned from Deriv OAuth.');
       }
 
-      // Use the first account's token to connect
-      const firstAccount = accounts[0];
-      const token = firstAccount.token;
-      
-      if (!token) {
-        throw new Error('No valid token received from Deriv OAuth');
+      if (storedState && state && storedState !== state) {
+        throw new Error('OAuth state mismatch. Please try signing in again.');
       }
 
-      // Connect to Deriv with the OAuth token
-      const authResponse = await connectDeriv(token);
-      // Handle both response formats for loginId
-      const loginId = authResponse?.authorize?.loginid || authResponse?.loginid || firstAccount.loginId;
+      const tokenPayload = await exchangeCodeForToken(code);
+      const accessToken = tokenPayload.access_token;
 
-      // Get app list with domains
-      const appListResponse = await getAppList();
-      const apps = appListResponse?.app_list || [];
+      if (!accessToken) {
+        throw new Error('No access token returned by Deriv OAuth.');
+      }
 
-      // Save token and apps to Appwrite
-      await saveToken(loginId, token, apps);
+      if (!tokenPayload.scope?.includes('application_read')) {
+        throw new Error('The OAuth response is missing application_read. Please allow the required scope.');
+      }
 
-      // Store in localStorage
-      localStorage.setItem('deriv_token', token);
-      localStorage.setItem('deriv_loginid', loginId);
-      
-      // Store all accounts
-      localStorage.setItem('deriv_accounts', JSON.stringify(accounts));
+      localStorage.setItem('deriv_oauth_access_token', accessToken);
+      localStorage.setItem('deriv_token', accessToken);
+      localStorage.setItem('deriv_loginid', 'oauth');
+      localStorage.setItem('deriv_oauth_scope', tokenPayload.scope || '');
+      clearOAuthSession();
 
       setStatus('Success!');
-
-      // Redirect to dashboard
       window.location.href = '/';
-
     } catch (err) {
+      clearOAuthSession();
       setError(err.message || 'Failed to complete OAuth login');
       setStatus('Error');
     }

@@ -1,13 +1,12 @@
 import { useState, useEffect } from 'react';
-import { connectDeriv } from '../services/deriv';
-import { getAppList } from '../services/deriv';
-import { createAnonymousSession, saveToken } from '../services/appwrite';
+import { createAnonymousSession } from '../services/appwrite';
+import { startOAuthLogin } from '../services/oauth';
+import { persistPatLogin } from '../services/deriv';
 
 export default function LoginModal({ onSuccess }) {
-  const [token, setToken] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [showToken, setShowToken] = useState(false);
+  const [patToken, setPatToken] = useState('');
 
   useEffect(() => {
     // Initialize Appwrite session
@@ -22,62 +21,37 @@ export default function LoginModal({ onSuccess }) {
     }
   };
 
-  const login = async () => {
-    if (!token.trim()) {
-      setError('Please enter your API token');
-      return;
-    }
-    
+  const handleOAuthLogin = async () => {
     setLoading(true);
     setError('');
-    
-    try {
-      // Connect to Deriv
-      const authResponse = await connectDeriv(token);
-      
-      // Get loginId from authorize response - handle both response formats
-      // The official API may return: { authorize: { loginid: ... } } or { loginid: ... }
-      let loginId = authResponse?.authorize?.loginid || authResponse?.loginid;
-      
-      if (!loginId) {
-        throw new Error('Failed to get login ID from Deriv');
-      }
 
-      // Get app list with domains - handle both response formats
-      const appListResponse = await getAppList();
-      const apps = appListResponse?.app_list || [];
-      
-      // Save token and apps to Appwrite
-      await saveToken(loginId, token, apps);
-      
-      // Also save apps to apps collection
-      if (apps.length > 0) {
-        const { saveAppDomains } = await import('../services/appwrite');
-        await saveAppDomains(loginId, apps);
-      }
-      
-      // Store in localStorage for quick access
-      localStorage.setItem('deriv_token', token);
-      localStorage.setItem('deriv_loginid', loginId);
-      
-      onSuccess();
+    try {
+      await startOAuthLogin();
     } catch (err) {
-      const errorMsg = err.message || 'Failed to connect. Please check your token and try again.';
-      setError(errorMsg);
-    } finally {
+      setError(err.message || 'Failed to start Deriv OAuth.');
       setLoading(false);
     }
   };
 
-  const handleOAuthLogin = () => {
-    const state = crypto.getRandomValues(new Uint8Array(16))
-      .reduce((s, b) => s + b.toString(16).padStart(2, '0'), '');
+  const handlePatLogin = async (event) => {
+    event.preventDefault();
 
-    sessionStorage.setItem('oauth_state', state);
+    if (!patToken.trim()) {
+      setError('Please enter your Deriv PAT token.');
+      return;
+    }
 
-    const oauthUrl = `https://oauth.deriv.com/oauth2/authorize?app_id=84769&brand=deriv&redirect=home&state=`;
+    setLoading(true);
+    setError('');
 
-    window.location.href = oauthUrl;
+    try {
+      persistPatLogin(patToken.trim());
+      onSuccess();
+    } catch (err) {
+      setError(err.message || 'Failed to sign in with PAT.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -90,39 +64,32 @@ export default function LoginModal({ onSuccess }) {
         <h2>Welcome Back</h2>
         <p className="subtitle">Access your Deriv commission dashboard</p>
 
-        <div className="input-group">
-          <label>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M12 2L2 7l10 5 10-5-10-5z"/>
-              <path d="M2 17l10 5 10-5"/>
-              <path d="M2 12l10 5 10-5"/>
-            </svg>
-            API Token
-          </label>
-          <div className="input-wrapper">
-            <input
-              type={showToken ? 'text' : 'password'}
-              placeholder="Enter your Deriv API token"
-              value={token}
-              onChange={e => setToken(e.target.value)}
-              onKeyPress={e => e.key === 'Enter' && !loading && login()}
-            />
-            <button 
-              className="toggle-password" 
-              onClick={() => setShowToken(!showToken)}
-              type="button"
-            >
-              {showToken ? '👁️' : '👁️‍🗨️'}
-            </button>
-          </div>
-          {error && <div className="error-message">{error}</div>}
-        </div>
+        {error && <div className="error-message">{error}</div>}
 
-        <button className="btn-primary" onClick={login} disabled={loading || !token.trim()}>
+        <form onSubmit={handlePatLogin} style={{ width: '100%', marginBottom: '16px' }}>
+          <label htmlFor="pat-token" style={{ display: 'block', marginBottom: '8px', fontWeight: 600 }}>
+            Deriv PAT token
+          </label>
+          <input
+            id="pat-token"
+            type="password"
+            value={patToken}
+            onChange={(event) => setPatToken(event.target.value)}
+            placeholder="Enter your Deriv PAT"
+            style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', marginBottom: '8px' }}
+          />
+          <button className="btn-primary" type="submit" disabled={loading} style={{ width: '100%' }}>
+            {loading ? 'Signing in...' : 'Sign in with PAT'}
+          </button>
+        </form>
+
+        <div className="divider">OR CONTINUE WITH</div>
+
+        <button className="btn-primary" onClick={handleOAuthLogin} disabled={loading}>
           {loading ? (
             <>
               <div className="spinner"></div>
-              Connecting...
+              Redirecting...
             </>
           ) : (
             <>
@@ -131,12 +98,12 @@ export default function LoginModal({ onSuccess }) {
                 <polyline points="10 17 15 12 10 7"/>
                 <line x1="15" y1="12" x2="3" y2="12"/>
               </svg>
-              Sign In with Token
+              Sign In with Deriv OAuth
             </>
           )}
         </button>
 
-        <div className="divider">OR CONTINUE WITH</div>
+        <div className="divider">SECURITY</div>
 
         <button className="btn-secondary" onClick={handleOAuthLogin} disabled={loading}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">

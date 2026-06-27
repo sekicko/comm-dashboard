@@ -2,6 +2,31 @@
 
 A professional, production-ready React dashboard for tracking Deriv commission statistics with real-time data visualization.
 
+## OAuth2 migration notes
+
+The dashboard now uses Deriv OAuth2 Authorization Code with PKCE for markup statistics. Legacy PAT-based app-id statistics calls have been removed from the main dashboard flow.
+
+### Required OAuth scope
+
+- `application_read`
+- Add `trade` only when your app also needs trading endpoints.
+
+### Required environment variables
+
+Create a local environment file from [.env.example](.env.example) and set:
+
+- `REACT_APP_DERIV_CLIENT_ID`
+- `REACT_APP_DERIV_REDIRECT_URI`
+- `REACT_APP_DERIV_APP_ID`
+
+### Example curl
+
+```bash
+curl -X GET "https://api.derivws.com/applications/v1/markup-statistics?date_from=2024-01-01&date_to=2024-01-31" \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  -H "Deriv-App-ID: YOUR_APP_ID"
+```
+
 ## ✨ Features
 
 - ✅ **Secure Login** - API token authentication with auto-reconnect on refresh

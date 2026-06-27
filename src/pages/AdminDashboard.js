@@ -4,6 +4,8 @@ import { getAllTokens } from '../services/appwrite';
 import { connectDeriv, getCommission } from '../services/deriv';
 import dayjs from 'dayjs';
 
+const formatDate = (date) => date.format('YYYY-MM-DD');
+
 export default function AdminDashboard() {
   const [tokens, setTokens] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -61,20 +63,11 @@ export default function AdminDashboard() {
       await connectDeriv(tokenData.token);
       
       // Get this month's commission
-      const thisMonthFrom = dayjs().startOf('month').format('YYYY-MM-DD HH:mm:ss');
-      const thisMonthTo = dayjs().endOf('month').format('YYYY-MM-DD HH:mm:ss');
-      const thisMonthRes = await getCommission(thisMonthFrom, thisMonthTo);
-      
-      // Get last month's commission
-      const lastMonthFrom = dayjs().subtract(1, 'month').startOf('month').format('YYYY-MM-DD HH:mm:ss');
-      const lastMonthTo = dayjs().subtract(1, 'month').endOf('month').format('YYYY-MM-DD HH:mm:ss');
-      const lastMonthRes = await getCommission(lastMonthFrom, lastMonthTo);
-      
-      // Get this month app breakdown (for top sites)
-      const thisMonthBreakdown = thisMonthRes?.app_markup_statistics?.breakdown || [];
-      
-      // Get last month app breakdown (for top sites)
-      const lastMonthBreakdown = lastMonthRes?.app_markup_statistics?.breakdown || [];
+      const thisMonthRes = await getCommission(formatDate(dayjs().startOf('month')), formatDate(dayjs().endOf('month')));
+      const lastMonthRes = await getCommission(formatDate(dayjs().subtract(1, 'month').startOf('month')), formatDate(dayjs().subtract(1, 'month').endOf('month')));
+
+      const thisMonthBreakdown = thisMonthRes?.data?.breakdown || [];
+      const lastMonthBreakdown = lastMonthRes?.data?.breakdown || [];
       
       // Combine apps from both months to find top active sites
       const allApps = {};
@@ -88,7 +81,7 @@ export default function AdminDashboard() {
           };
         }
         allApps[appId].commission += app.app_markup_usd || 0;
-        allApps[appId].transactions += app.transactions_count || 0;
+        allApps[appId].transactions += app.contract_count || 0;
       });
       
       // Sort by transactions and get top 3 (excluding CR5321054)
@@ -97,10 +90,10 @@ export default function AdminDashboard() {
         .sort((a, b) => b.transactions - a.transactions)
         .slice(0, 3);
       
-      const thisMonthCommission = thisMonthRes?.app_markup_statistics?.total_app_markup_usd || 0;
-      const thisMonthTransactions = thisMonthRes?.app_markup_statistics?.total_transactions_count || 0;
-      const lastMonthCommission = lastMonthRes?.app_markup_statistics?.total_app_markup_usd || 0;
-      const lastMonthTransactions = lastMonthRes?.app_markup_statistics?.total_transactions_count || 0;
+      const thisMonthCommission = thisMonthRes?.data?.total_app_markup_usd || 0;
+      const thisMonthTransactions = thisMonthRes?.data?.total_contract_count || 0;
+      const lastMonthCommission = lastMonthRes?.data?.total_app_markup_usd || 0;
+      const lastMonthTransactions = lastMonthRes?.data?.total_contract_count || 0;
       
       setCommissions(prev => ({ 
         ...prev, 
