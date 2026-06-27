@@ -1,4 +1,4 @@
-import { getMarkupStatistics, persistPatLogin } from './deriv';
+import { getMarkupStatistics, persistPatLogin, validatePatToken } from './deriv';
 
 describe('persistPatLogin', () => {
   it('stores a PAT-based login session for the app', () => {
@@ -9,6 +9,39 @@ describe('persistPatLogin', () => {
     expect(localStorage.getItem('deriv_pat')).toBe('pat-token-123');
     expect(localStorage.getItem('deriv_login_mode')).toBe('pat');
     expect(localStorage.getItem('deriv_loginid')).toBe('pat');
+  });
+});
+
+describe('validatePatToken', () => {
+  const originalFetch = global.fetch;
+
+  beforeEach(() => {
+    localStorage.clear();
+    global.fetch = jest.fn();
+  });
+
+  afterAll(() => {
+    global.fetch = originalFetch;
+  });
+
+  it('validates a PAT token via the new Deriv account endpoint', async () => {
+    global.fetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ valid: true, data: { valid: true } })
+    });
+
+    const result = await validatePatToken('pat-token-123');
+
+    expect(result.valid).toBe(true);
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.stringContaining('/accounts/v1/validate-pat'),
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: 'Bearer pat-token-123',
+          'Deriv-App-ID': expect.any(String)
+        })
+      })
+    );
   });
 });
 

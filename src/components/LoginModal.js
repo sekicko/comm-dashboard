@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { createAnonymousSession } from '../services/appwrite';
 import { startOAuthLogin } from '../services/oauth';
-import { persistPatLogin } from '../services/deriv';
+import { persistPatLogin, validatePatToken } from '../services/deriv';
 
 export default function LoginModal({ onSuccess }) {
   const [loading, setLoading] = useState(false);
@@ -45,6 +45,14 @@ export default function LoginModal({ onSuccess }) {
     setError('');
 
     try {
+      const validation = await validatePatToken(patToken.trim());
+      const isValid = validation?.valid || validation?.data?.valid || validation?.authenticated || validation?.data?.authenticated;
+
+      if (!isValid) {
+        setError('Your Deriv PAT could not be validated. Please verify the token and try again.');
+        return;
+      }
+
       persistPatLogin(patToken.trim());
       onSuccess();
     } catch (err) {
@@ -81,6 +89,9 @@ export default function LoginModal({ onSuccess }) {
           <button className="btn-primary" type="submit" disabled={loading} style={{ width: '100%' }}>
             {loading ? 'Signing in...' : 'Sign in with PAT'}
           </button>
+          <p style={{ fontSize: '0.875rem', color: '#64748b', marginTop: '8px', lineHeight: 1.5 }}>
+            This validates your Deriv PAT against the new account API before loading your registered apps.
+          </p>
         </form>
 
         <div className="divider">OR CONTINUE WITH</div>

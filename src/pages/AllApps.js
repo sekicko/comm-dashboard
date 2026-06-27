@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import dayjs from 'dayjs';
-import { getCommission } from '../services/deriv';
+import { getCommission, getAppList } from '../services/deriv';
 import AppCard from '../components/AppCard';
 
 const formatDate = (date) => date.format('YYYY-MM-DD');
@@ -26,11 +26,15 @@ export default function AllApps() {
     setLoading(true);
     
     try {
-      const thisMonthRes = await getCommission(formatDate(dayjs().startOf('month')), formatDate(dayjs().endOf('month')));
-      const thisMonthBreakdown = thisMonthRes?.data?.breakdown || [];
+      const [thisMonthRes, lastMonthRes, appListRes] = await Promise.all([
+        getCommission(formatDate(dayjs().startOf('month')), formatDate(dayjs().endOf('month'))),
+        getCommission(formatDate(dayjs().subtract(1, 'month').startOf('month')), formatDate(dayjs().subtract(1, 'month').endOf('month'))),
+        getAppList().catch(() => ({ app_list: [] }))
+      ]);
 
-      const lastMonthRes = await getCommission(formatDate(dayjs().subtract(1, 'month').startOf('month')), formatDate(dayjs().subtract(1, 'month').endOf('month')));
+      const thisMonthBreakdown = thisMonthRes?.data?.breakdown || [];
       const lastMonthBreakdown = lastMonthRes?.data?.breakdown || [];
+      const registeredApps = Array.isArray(appListRes?.app_list) ? appListRes.app_list : [];
 
       const stats = {};
       let totalRev = 0;
@@ -74,8 +78,23 @@ export default function AllApps() {
         }
       });
 
+      registeredApps.forEach((app) => {
+        const appId = String(app.app_id ?? app.id ?? app.application_id ?? '');
+        if (appId && !stats[appId]) {
+          stats[appId] = {
+            thisMonth: 0,
+            lastMonth: 0,
+            transactions: 0,
+            sharePercent: 0
+          };
+        }
+      });
+
       // Filter out apps with no data in either month
-      const appsWithData = Object.keys(stats).map((appId) => ({ app_id: Number(appId) }));
+      const appsWithData = Object.keys(stats).map((appId) => ({
+        app_id: Number(appId),
+        ...(registeredApps.find((app) => String(app.app_id ?? app.id ?? app.application_id ?? '') === appId) || {})
+      }));
       
       // Calculate share percentages
       Object.keys(stats).forEach(appId => {

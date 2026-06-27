@@ -1,5 +1,8 @@
 const APP_ID = process.env.REACT_APP_DERIV_APP_ID || process.env.DERIV_APP_ID || '105603';
-const MARKUP_STATISTICS_URL = 'https://api.derivws.com/applications/v1/markup-statistics';
+const DERIV_API_BASE_URL = process.env.REACT_APP_DERIV_API_BASE_URL || process.env.DERIV_API_BASE_URL || 'https://api.deriv.com';
+const MARKUP_STATISTICS_URL = `${DERIV_API_BASE_URL}/applications/v1/markup-statistics`;
+const REGISTERED_APPS_URL = `${DERIV_API_BASE_URL}/accounts/v1/registered-apps`;
+const VALIDATE_PAT_URL = `${DERIV_API_BASE_URL}/accounts/v1/validate-pat`;
 
 const getStoredToken = () => {
   if (typeof window === 'undefined') {
@@ -11,7 +14,9 @@ const getStoredToken = () => {
 
 const getAuthHeaders = (token) => ({
   Authorization: `Bearer ${token}`,
-  'Deriv-App-ID': APP_ID
+  'Deriv-App-ID': APP_ID,
+  'X-Deriv-App-Id': APP_ID,
+  Accept: 'application/json'
 });
 
 const parseApiError = async (response, fallbackMessage) => {
@@ -56,6 +61,20 @@ export const clearPatLogin = () => {
   localStorage.removeItem('deriv_login_mode');
 };
 
+export const validatePatToken = async (token) => {
+  const response = await fetch(VALIDATE_PAT_URL, {
+    method: 'GET',
+    headers: getAuthHeaders(token)
+  });
+
+  if (!response.ok) {
+    await parseApiError(response, 'Failed to validate your Deriv PAT.');
+  }
+
+  const payload = await response.json();
+  return payload;
+};
+
 export const getMarkupStatistics = async (date_from, date_to) => {
   const token = getStoredToken();
 
@@ -84,8 +103,30 @@ export const getCommission = async (date_from, date_to) => {
   return getMarkupStatistics(date_from, date_to);
 };
 
+export const getRegisteredApps = async () => {
+  const loginMode = getLoginMode();
+  const token = loginMode === 'pat' ? localStorage.getItem('deriv_pat') || getStoredToken() : getStoredToken();
+
+  if (!token) {
+    throw new Error('Please sign in to load your registered Deriv apps.');
+  }
+
+  const response = await fetch(REGISTERED_APPS_URL, {
+    method: 'GET',
+    headers: getAuthHeaders(token)
+  });
+
+  if (!response.ok) {
+    await parseApiError(response, 'Failed to load registered Deriv apps.');
+  }
+
+  return response.json();
+};
+
 export const getAppList = async () => {
-  return { app_list: [] };
+  const payload = await getRegisteredApps();
+  const appList = payload?.data?.apps || payload?.apps || payload?.app_list || [];
+  return { app_list: appList, raw: payload };
 };
 
 export const getAppDetails = async () => {
